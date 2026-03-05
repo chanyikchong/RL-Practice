@@ -1,0 +1,12 @@
+results/
+__pycache__/
+*.pyc
+.venv/
+*.pt
+*.npy
+.DS_Store
+*.egg-info/
+dist/
+build/
+.tensorboard/
+wandb/
