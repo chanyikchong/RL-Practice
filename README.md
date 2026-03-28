@@ -1,6 +1,6 @@
-# RL Learning Project
+# Practicing Reinforcement Learning
 
-A hands-on reinforcement learning project using **LunarLander-v2** (Gymnasium). You implement the algorithms; the project provides the environment, training infrastructure, and visualization tools.
+A hands-on reinforcement learning project using **LunarLander-v2** (Gymnasium). You implement the algorithms. The project provides the environment, training infrastructure, and visualization tools.
 
 ## Philosophy
 
