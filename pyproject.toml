@@ -20,6 +20,7 @@ dependencies = [
     "transformers>=4.40.0",
     "datasets>=2.19.0",
     "trl>=0.8.6",
+    "setuptools<82",
 ]
 
 [tool.hatch.build.targets.wheel]

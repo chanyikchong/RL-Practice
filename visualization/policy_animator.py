@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
+import shutil
+import subprocess
+import tempfile
 
 import imageio
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 
 from core.base_agent import BaseAgent
 from environment.lunar_lander import LunarLanderEnv
@@ -19,11 +21,40 @@ def _overlay_text(frame: np.ndarray, lines: list[str]) -> np.ndarray:
     draw = ImageDraw.Draw(img)
     y = 10
     for line in lines:
-        # Draw shadow then text for readability
         draw.text((11, y + 1), line, fill=(0, 0, 0))
         draw.text((10, y), line, fill=(255, 255, 255))
         y += 18
     return np.array(img)
+
+
+def _write_mp4(path: str, frames: list[np.ndarray], fps: int = 30) -> None:
+    """Write frames to a widely-compatible MP4 via the system ffmpeg.
+
+    Pipes raw RGB frames into ffmpeg which encodes with libx264, yuv420p
+    pixel format, and faststart flag for immediate playback.
+    """
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+
+    h, w = frames[0].shape[:2]
+    cmd = [
+        "ffmpeg", "-y",
+        "-f", "rawvideo",
+        "-vcodec", "rawvideo",
+        "-s", f"{w}x{h}",
+        "-pix_fmt", "rgb24",
+        "-r", str(fps),
+        "-i", "-",
+        "-c:v", "libx264",
+        "-pix_fmt", "yuv420p",
+        "-crf", "23",
+        "-movflags", "+faststart",
+        path,
+    ]
+    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
+    for frame in frames:
+        proc.stdin.write(frame.tobytes())
+    proc.stdin.close()
+    proc.wait()
 
 
 def animate_agent(
@@ -34,20 +65,23 @@ def animate_agent(
     filename: str = "policy",
     fps: int = 30,
     max_steps: int = 1000,
-) -> list[str]:
-    """Record episodes as MP4 files with real-time stat overlays.
+) -> str:
+    """Record multiple episodes into a single MP4 with stat overlays.
+
+    All episodes are concatenated into one video. A title frame is shown
+    between episodes indicating the episode number and final reward.
 
     Args:
         agent: Trained agent (will be set to eval mode).
         env: Environment instance. If None, creates one with rgb_array render.
         n_episodes: Number of episodes to record.
         output_path: Directory to save videos.
-        filename: Base filename (episode number appended).
+        filename: Base filename.
         fps: Frames per second.
         max_steps: Max steps per episode.
 
     Returns:
-        List of saved file paths.
+        Path to the saved video file.
     """
     own_env = env is None
     if own_env:
@@ -55,11 +89,12 @@ def animate_agent(
 
     os.makedirs(output_path, exist_ok=True)
     agent.set_eval_mode()
-    saved_paths = []
+
+    all_frames: list[np.ndarray] = []
 
     for ep in range(n_episodes):
         obs, state_info = env.reset()
-        frames = []
+        ep_frames: list[np.ndarray] = []
         total_reward = 0.0
 
         for step in range(max_steps):
@@ -71,6 +106,7 @@ def animate_agent(
             total_reward += reward
 
             overlay_lines = [
+                f"Episode {ep + 1}/{n_episodes}",
                 f"Step: {step + 1}",
                 f"Reward: {total_reward:.1f}",
                 f"Action: {action_name}",
@@ -78,20 +114,34 @@ def animate_agent(
                 f"Dist: {state_info.distance_to_target:.2f}",
             ]
             frame = _overlay_text(frame, overlay_lines)
-            frames.append(frame)
+            ep_frames.append(frame)
 
             if terminated or truncated:
                 break
 
-        out_file = os.path.join(output_path, f"{filename}_ep{ep + 1}.mp4")
-        imageio.mimwrite(out_file, frames, fps=fps)
-        saved_paths.append(out_file)
+        # Add a brief separator between episodes (1 second of the last frame
+        # with the final reward displayed)
+        if ep_frames:
+            last = ep_frames[-1].copy()
+            h, w = last.shape[:2]
+            img = Image.fromarray(last)
+            draw = ImageDraw.Draw(img)
+            label = f"Episode {ep + 1} done  |  Reward: {total_reward:.1f}"
+            draw.rectangle([(0, h // 2 - 15), (w, h // 2 + 15)], fill=(0, 0, 0))
+            draw.text((w // 2 - len(label) * 3, h // 2 - 7), label, fill=(255, 255, 255))
+            separator = np.array(img)
+            ep_frames.extend([separator] * fps)  # 1 second pause
+
+        all_frames.extend(ep_frames)
+
+    out_file = os.path.join(output_path, f"{filename}.mp4")
+    _write_mp4(out_file, all_frames, fps=fps)
 
     agent.set_train_mode()
     if own_env:
         env.close()
 
-    return saved_paths
+    return out_file
 
 
 def compare_agents_side_by_side(
@@ -113,7 +163,6 @@ def compare_agents_side_by_side(
     Returns:
         Path to saved video.
     """
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
     all_runs: dict[str, list[np.ndarray]] = {}
 
     for name, agent in agents_dict.items():
@@ -146,12 +195,10 @@ def compare_agents_side_by_side(
     combined_frames = []
     for i in range(max_len):
         row_frames = [all_runs[n][i] for n in names]
-        # Ensure same height
         h = min(f.shape[0] for f in row_frames)
-        w_total = sum(f.shape[1] for f in row_frames)
         row_frames = [f[:h] for f in row_frames]
         combined = np.concatenate(row_frames, axis=1)
         combined_frames.append(combined)
 
-    imageio.mimwrite(output_path, combined_frames, fps=fps)
+    _write_mp4(output_path, combined_frames, fps=fps)
     return output_path

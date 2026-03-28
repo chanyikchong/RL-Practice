@@ -12,6 +12,8 @@ import sys
 import typer
 from rich.console import Console
 
+from .utils import HYPER_PARAM
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from environment import LunarLanderEnv
@@ -23,6 +25,7 @@ app = typer.Typer(help="Evaluate a trained RL agent")
 ALGO_REGISTRY = {
     "q_learning": ("algorithms.q_learning.agent", "QLearningAgent"),
     "dqn": ("algorithms.dqn.agent", "DQNAgent"),
+    "double_dqn": ("algorithms.double_dqn.agent", "DoubleDQNAgent"),
     "reinforce": ("algorithms.reinforce.agent", "REINFORCEAgent"),
     "actor_critic": ("algorithms.actor_critic.agent", "ActorCriticAgent"),
     "a2c": ("algorithms.a2c.agent", "A2CAgent"),
@@ -59,7 +62,7 @@ def evaluate(
     module_path, class_name = registry[algo]
     module = importlib.import_module(module_path)
     agent_class = getattr(module, class_name)
-    agent = agent_class()
+    agent = agent_class(**HYPER_PARAM[algo])
 
     console.print(f"Loading checkpoint: {checkpoint}")
     agent.load(checkpoint)

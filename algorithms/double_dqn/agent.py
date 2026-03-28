@@ -1,5 +1,5 @@
 """
-Deep Q-Network (DQN) Agent
+Double Deep Q-Network (DQN) Agent
 ============================
 
 Key idea: Replace the Q-table with a neural network Q(s,a;θ) that maps
@@ -12,12 +12,12 @@ Two critical innovations over tabular Q-learning:
 2. Target Network: Use a separate, slowly-updated copy of the Q-network
    to compute TD targets, preventing oscillation.
 
-Loss: MSE between Q(s,a;θ) and [r + γ max_a' Q(s',a';θ⁻)]
+Loss: MSE between Q(s,a;θ) and [r + γ Q(s', max_a' Q(s',a';θ); θ⁻)]
 where θ⁻ are the target network's frozen parameters.
 
-Recommended reading: Mnih et al. 2015 "Human-level control through deep RL"
+Recommended reading: Hasselt et al. 2015 "Deep Reinforcement Learning with Double Q-learning"
 
-See algorithms/dqn/network.py for the provided QNetwork architecture.
+See algorithms/double_dqn/network.py for the provided QNetwork architecture.
 """
 
 from __future__ import annotations
@@ -32,8 +32,8 @@ from core.replay_buffer import ReplayBuffer
 from .network import QNetwork
 
 
-class DQNAgent(BaseAgent):
-    """DQN agent with experience replay and target network.
+class DoubleDQNAgent(BaseAgent):
+    """Double DQN agent with experience replay and target network.
 
     Args:
         state_dim: Dimension of observation space (8 for LunarLander).
@@ -46,6 +46,7 @@ class DQNAgent(BaseAgent):
         epsilon_min: Minimum exploration rate.
         buffer_capacity: Replay buffer maximum size.
         batch_size: Mini-batch size for training.
+        update_tau: Update tau parameter.
         target_update_every: Steps between target network syncs.
     """
 
@@ -62,15 +63,9 @@ class DQNAgent(BaseAgent):
         buffer_capacity: int = 100_000,
         batch_size: int = 64,
         target_update_every: int = 1000,
+        update_tau: float = 0.01,
         clip_norm: float = 1.0,
     ):
-        # TODO: Store hyperparameters
-        # TODO: Create the online Q-network: QNetwork(state_dim, n_actions, hidden_dim)
-        # TODO: Create the target Q-network: QNetwork(...) — same architecture
-        # TODO: Copy online weights to target: target_net.load_state_dict(online_net.state_dict())
-        # TODO: Create optimizer: torch.optim.Adam(online_net.parameters(), lr=learning_rate)
-        # TODO: Create replay buffer: ReplayBuffer(buffer_capacity)
-        # TODO: Initialize step counter for target updates
         self.n_actions = n_actions
         self.learning_rate = learning_rate
         self.gamma = gamma
@@ -80,6 +75,7 @@ class DQNAgent(BaseAgent):
         self.batch_size = batch_size
         self.replay_buffer = ReplayBuffer(capacity=buffer_capacity)
         self.target_update_every = target_update_every
+        self.update_tau = update_tau
         self.clip_norm = clip_norm
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.step_counter = 0
@@ -99,7 +95,6 @@ class DQNAgent(BaseAgent):
         With probability epsilon, return random action.
         Otherwise, pass state through Q-network and return argmax.
         """
-        # TODO: Implement epsilon-greedy with neural network
         # 1. if random < epsilon: return random action
         # 2. else:
         #    - Convert state to tensor: torch.FloatTensor(state).unsqueeze(0)
@@ -126,8 +121,6 @@ class DQNAgent(BaseAgent):
         Returns:
             {"loss": float, "epsilon": float, "buffer_size": int}
         """
-        # TODO: Implement DQN update
-        #
         # Step 1: self.buffer.push(state, action, reward, next_state, done)
         #
         # Step 2: if not self.buffer.is_ready: return {"loss": 0, ...}
@@ -140,7 +133,8 @@ class DQNAgent(BaseAgent):
         #         dones = batch["dones"]
         #
         # Step 4: with torch.no_grad():
-        #             next_q = self.target_net(next_states).max(dim=1)[0]
+        #             next_actions = self.online_net(next_states).max(dim=1)[1].unsqueeze(1)
+        #             next_q = self.target_net(next_states).gather(1, next_actions)
         #             targets = rewards + self.gamma * next_q * (1 - dones)
         #
         # Step 5: current_q = self.online_net(states)
@@ -174,7 +168,8 @@ class DQNAgent(BaseAgent):
 
         with torch.no_grad():
             self.online_net.eval()
-            next_q_value = self.target_net(next_states).max(dim=1)[0]
+            next_actions = self.online_net(next_states).max(1)[1].unsqueeze(1)
+            next_q_value = self.target_net(next_states).gather(1, next_actions).squeeze(1)
             target = rewards + self.gamma * next_q_value * (1 - dones)
 
         self.online_net.train()
@@ -187,7 +182,9 @@ class DQNAgent(BaseAgent):
 
         self.step_counter += 1
         if self.step_counter % self.target_update_every == 0:
-            self.target_net.load_state_dict(self.online_net.state_dict())
+            with torch.no_grad():
+                for param_a, param_b in zip(self.target_net.parameters(), self.online_net.parameters()):
+                    param_a.mul_(self.update_tau).add_(param_b, alpha=1 - self.update_tau)
         self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
         return {
             "loss": advantages.item(),
@@ -201,23 +198,16 @@ class DQNAgent(BaseAgent):
 
     def load(self, path: str) -> None:
         """Load online network weights and sync to target."""
-        # TODO: self.online_net.load_state_dict(torch.load(path))
-        # TODO: self.target_net.load_state_dict(self.online_net.state_dict())
         self.online_net.load_state_dict(torch.load(path))
         self.target_net.load_state_dict(self.online_net.state_dict())
 
     def set_eval_mode(self) -> None:
         """Set epsilon to 0 and network to eval mode."""
-        # TODO: self._train_epsilon = self.epsilon
-        # TODO: self.epsilon = 0.0
-        # TODO: self.online_net.eval()
         self._train_epsilon = self.epsilon
         self.epsilon = 0.0
         self.online_net.eval()
 
     def set_train_mode(self) -> None:
         """Restore epsilon and set network to train mode."""
-        # TODO: self.epsilon = self._train_epsilon
-        # TODO: self.online_net.train()
         self.epsilon = self._train_epsilon
         self.online_net.train()

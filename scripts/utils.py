@@ -1,0 +1,91 @@
+HYPER_PARAM = {
+    "q_learning": {
+        "n_bins": 6,
+        "learning_rate": 0.1,
+        "gamma": 0.99,
+        "epsilon": 1.0,
+        "epsilon_decay": 0.995,
+        "epsilon_min": 0.01,
+    },
+    "dqn": {
+        "state_dim": 8,
+        "n_actions": 4,
+        "hidden_dim": 128,
+        "learning_rate": 5e-4,
+        "gamma": 0.99,
+        "epsilon": 1.0,
+        "epsilon_decay": 0.995,
+        "epsilon_min": 0.01,
+        "buffer_capacity": 100_000,
+        "batch_size": 64,
+        "target_update_every": 1000,
+        "clip_norm": 1.0,
+    },
+    "double_dqn": {
+        "state_dim": 8,
+        "n_actions": 4,
+        "hidden_dim": 128,
+        "learning_rate": 5e-4,
+        "gamma": 0.99,
+        "epsilon": 1.0,
+        "epsilon_decay": 0.995,
+        "epsilon_min": 0.01,
+        "buffer_capacity": 100_000,
+        "batch_size": 64,
+        "target_update_every": 1000,
+        "update_tau": 0.01,
+        "clip_norm": 1.0,
+    },
+    "reinforce": {
+        "state_dim": 8,
+        "n_actions": 4,
+        "hidden_dim": 128,
+        "learning_rate": 5e-4,
+        "gamma": 0.99,
+        "batch_size": 1,
+        "baseline": "norm",
+        "replay_length": 1
+    },
+    "actor_critic": {
+        "state_dim": 8,
+        "n_actions": 4,
+        "hidden_dim": 128,
+        "actor_lr": 1e-3,
+        "critic_lr": 5e-3,
+        "gamma": 0.99,
+    },
+    "a2c": {
+        "state_dim": 8,
+        "n_actions": 4,
+        "hidden_dim": 128,
+        "learning_rate": 5e-4,
+        "gamma": 0.99,
+        "n_steps": 5,
+        "value_coeff": 0.5,
+        "entropy_coeff": 0.01,
+        "baseline": "norm",
+    }
+}
+
+SOLUTION_HYPER_PARAM = {
+    "reinforce": {
+        "state_dim": 8,
+        "n_actions": 4,
+        "hidden_dim": 128,
+        "learning_rate": 5e-4,
+        "gamma": 0.99,
+        "batch_size": 1,
+        "baseline": "norm",
+        "replay_length": 1
+    },
+    "a2c": {
+        "state_dim": 8,
+        "n_actions": 4,
+        "hidden_dim": 128,
+        "learning_rate": 5e-4,
+        "gamma": 0.99,
+        "n_steps": 20,
+        "value_coeff": 0.5,
+        "entropy_coeff": 0.01,
+    }
+}

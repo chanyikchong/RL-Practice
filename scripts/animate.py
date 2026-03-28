@@ -18,12 +18,16 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from environment import LunarLanderEnv
 from visualization.policy_animator import animate_agent
 
+from utils import HYPER_PARAM, SOLUTION_HYPER_PARAM
+
+
 console = Console()
 app = typer.Typer(help="Record agent behavior as MP4 video")
 
 ALGO_REGISTRY = {
     "q_learning": ("algorithms.q_learning.agent", "QLearningAgent"),
     "dqn": ("algorithms.dqn.agent", "DQNAgent"),
+    "double_dqn": ("algorithms.double_dqn.agent", "DoubleDQNAgent"),
     "reinforce": ("algorithms.reinforce.agent", "REINFORCEAgent"),
     "actor_critic": ("algorithms.actor_critic.agent", "ActorCriticAgent"),
     "a2c": ("algorithms.a2c.agent", "A2CAgent"),
@@ -54,6 +58,8 @@ def animate(
     import importlib
 
     registry = SOLUTION_REGISTRY if use_solution else ALGO_REGISTRY
+    hyper_params = SOLUTION_HYPER_PARAM if use_solution else HYPER_PARAM
+
     if algo not in registry:
         console.print(f"[red]Unknown algorithm: {algo}[/red]")
         raise typer.Exit(1)
@@ -61,7 +67,7 @@ def animate(
     module_path, class_name = registry[algo]
     module = importlib.import_module(module_path)
     agent_class = getattr(module, class_name)
-    agent = agent_class()
+    agent = agent_class(**hyper_params[algo])
 
     if checkpoint is None:
         checkpoint = f"results/checkpoints/{algo}_final.pt"
@@ -75,15 +81,14 @@ def animate(
     env = LunarLanderEnv(render_mode="rgb_array")
     console.print(f"Recording {episodes} episodes...")
 
-    paths = animate_agent(
+    path = animate_agent(
         agent, env,
         n_episodes=episodes,
         output_path=output_dir,
         filename=algo,
     )
 
-    for p in paths:
-        console.print(f"  Saved: {p}")
+    console.print(f"  Saved: {path}")
 
     env.close()
 

@@ -1,4 +1,6 @@
 """Actor-Critic Networks (fully implemented)."""
+from typing import Tuple
+
 import torch
 import torch.nn as nn
 from torch.distributions import Categorical
@@ -18,6 +20,11 @@ class ActorNetwork(nn.Module):
     def forward(self, x: torch.Tensor) -> Categorical:
         logits = self.net(x)
         return Categorical(logits=logits)
+
+    def select_action(self, state: torch.Tensor) -> Tuple[int, torch.Tensor]:
+        logits = self.forward(state)
+        action = logits.sample()
+        return action.item(), logits.log_prob(action)
 
 class CriticNetwork(nn.Module):
     """Value network (critic) mapping states to state values V(s)."""

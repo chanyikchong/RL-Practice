@@ -24,6 +24,7 @@ from __future__ import annotations
 import numpy as np
 import torch
 import torch.nn.functional as F
+from torch import optim
 
 from core.base_agent import BaseAgent
 from .network import ActorNetwork, CriticNetwork
@@ -54,7 +55,14 @@ class ActorCriticAgent(BaseAgent):
         # TODO: Create ActorNetwork and CriticNetwork
         # TODO: Create separate optimizers for actor and critic
         # TODO: self._last_log_prob = None (to store between select_action and update)
-        raise NotImplementedError("Implement __init__: create actor, critic, optimizers")
+        self.gamma = gamma
+        self.actor = ActorNetwork(state_dim=state_dim, n_actions=n_actions, hidden_dim=hidden_dim)
+        self.critic = CriticNetwork(state_dim=state_dim, hidden_dim=hidden_dim)
+        self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=actor_lr)
+        self.critic_optimizer = optim.Adam(self.critic.parameters(), lr=critic_lr)
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.actor.to(self.device)
+        self.critic.to(self.device)
 
     def select_action(self, state: np.ndarray) -> int:
         """Sample action from actor and store log probability.
@@ -65,13 +73,16 @@ class ActorCriticAgent(BaseAgent):
         3. Sample action
         4. Store log_prob in self._last_log_prob
         """
-        # TODO: Implement action selection
         # state_tensor = torch.FloatTensor(state).unsqueeze(0)
         # dist = self.actor(state_tensor)
         # action = dist.sample()
         # self._last_log_prob = dist.log_prob(action)
         # return action.item()
-        raise NotImplementedError("Implement select_action")
+        self.actor.eval()
+        with torch.no_grad():
+            state = torch.tensor(state, dtype=torch.float).to(self.device)
+            action, _ = self.actor.select_action(state.unsqueeze(0))
+        return action
 
     def update(self, state, action, reward, next_state, done) -> dict:
         """One-step Actor-Critic update using TD advantage.
@@ -88,8 +99,6 @@ class ActorCriticAgent(BaseAgent):
         Returns:
             {"actor_loss": float, "critic_loss": float, "advantage": float}
         """
-        # TODO: Implement actor-critic update
-        #
         # state_t = torch.FloatTensor(state).unsqueeze(0)
         # next_state_t = torch.FloatTensor(next_state).unsqueeze(0)
         #
@@ -116,24 +125,51 @@ class ActorCriticAgent(BaseAgent):
         #
         # return {"actor_loss": actor_loss.item(), "critic_loss": critic_loss.item(),
         #         "advantage": advantage.item()}
-        raise NotImplementedError("Implement update: TD actor-critic")
+
+        state = torch.tensor(state, dtype=torch.float).unsqueeze(0).to(self.device)
+        action = torch.tensor(action, dtype=torch.long).to(self.device)
+        reward = torch.tensor(reward, dtype=torch.float).to(self.device)
+        next_state = torch.tensor(next_state, dtype=torch.float).unsqueeze(0).to(self.device)
+
+        self.critic.eval()
+        with torch.no_grad():
+            next_v = self.critic(next_state)
+
+        self.critic.train()
+        self.actor.train()
+        self.actor_optimizer.zero_grad()
+        self.critic_optimizer.zero_grad()
+        current_v = self.critic(state)
+        logit = self.actor(state)
+        log_prob = logit.log_prob(action).unsqueeze(0)
+        target = reward + self.gamma * next_v * (1 - done)
+        td_error = target - current_v
+        actor_loss = -log_prob * td_error.detach()
+        critic_loss = F.mse_loss(current_v, target)
+        actor_loss.backward()
+        critic_loss.backward()
+        self.actor_optimizer.step()
+        self.critic_optimizer.step()
+        return {
+            "actor_loss": actor_loss.item(),
+            "critic_loss": critic_loss.item(),
+            "advantage": td_error.item()
+        }
 
     def save(self, path: str) -> None:
         """Save both actor and critic weights."""
-        # TODO: torch.save({"actor": ..., "critic": ...}, path)
-        raise NotImplementedError("Implement save")
+        torch.save({"actor": self.actor.state_dict(), "critic": self.critic.state_dict()}, path)
 
     def load(self, path: str) -> None:
         """Load both actor and critic weights."""
-        # TODO: checkpoint = torch.load(path)
-        # self.actor.load_state_dict(checkpoint["actor"])
-        # self.critic.load_state_dict(checkpoint["critic"])
-        raise NotImplementedError("Implement load")
+        checkpoint = torch.load(path)
+        self.actor.load_state_dict(checkpoint["actor"])
+        self.critic.load_state_dict(checkpoint["critic"])
 
     def set_eval_mode(self) -> None:
-        # TODO: self.actor.eval(); self.critic.eval()
-        raise NotImplementedError("Implement set_eval_mode")
+        self.actor.eval()
+        self.critic.eval()
 
     def set_train_mode(self) -> None:
-        # TODO: self.actor.train(); self.critic.train()
-        raise NotImplementedError("Implement set_train_mode")
+        self.actor.train()
+        self.critic.train()

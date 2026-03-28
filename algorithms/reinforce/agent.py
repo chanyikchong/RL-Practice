@@ -23,8 +23,10 @@ from __future__ import annotations
 
 import numpy as np
 import torch
+from torch import optim
 
 from core.base_agent import BaseAgent
+from core.replay_episodes import ReplayEpisodes
 from .network import PolicyNetwork
 
 
@@ -46,14 +48,22 @@ class REINFORCEAgent(BaseAgent):
         hidden_dim: int = 128,
         learning_rate: float = 1e-3,
         gamma: float = 0.99,
+        batch_size: int = 64,
+        baseline: str = "mean",
+        replay_length: int = 1000,
     ):
-        # TODO: Store hyperparameters
-        # TODO: Create PolicyNetwork(state_dim, n_actions, hidden_dim)
-        # TODO: Create optimizer: torch.optim.Adam(...)
-        # TODO: Initialize episode storage lists:
-        #   self.log_probs = []   # log π(a|s) for each step
-        #   self.rewards = []     # reward at each step
-        raise NotImplementedError("Implement __init__: create policy network and storage")
+        assert baseline in ["mean", "norm", "time"], ValueError("Baseline must be 'mean', 'norm' or 'time'.")
+        self.policy_net = PolicyNetwork(state_dim, n_actions, hidden_dim)
+        self.optimizer = optim.Adam(self.policy_net.parameters(), lr=learning_rate)
+        self.gamma = gamma
+        self.batch_size = batch_size
+        self.baseline = baseline
+        self.states = list()
+        self.actions = list()
+        self.rewards = list()
+        self.replay_episodes = ReplayEpisodes(capacity=replay_length)
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.policy_net.to(self.device)
 
     def select_action(self, state: np.ndarray) -> int:
         """Sample action from policy and store the log probability.
@@ -65,12 +75,31 @@ class REINFORCEAgent(BaseAgent):
         4. Store log_prob for later gradient computation
         5. Return action
         """
-        # TODO: Implement stochastic action selection
         # state_tensor = torch.FloatTensor(state).unsqueeze(0)
         # action, log_prob = self.policy.get_action(state_tensor)
         # self.log_probs.append(log_prob)
         # return action
-        raise NotImplementedError("Implement select_action: sample from policy")
+        self.policy_net.eval()
+        with torch.no_grad():
+            action, log_prob = self.policy_net.get_action(torch.tensor(state, dtype=torch.float, device=self.device))
+        return action
+
+    def compute_baseline(self, gts, lengths):
+        if self.baseline == "mean":
+            return gts - torch.mean(gts)
+        elif self.baseline == "norm":
+            return (gts - gts.mean()) / (gts.std() + 1e-8)
+        elif self.baseline == 'time':
+            # make time idx
+            t_idx = torch.cat([torch.arange(L, device=self.device) for L in lengths], dim=0)
+            T_max = max(lengths)
+            b_t = torch.empty(T_max, device=self.device, dtype=gts.dtype)
+            for t in range(T_max):
+                b_t[t] = gts[t_idx == t].mean()
+            baseline_per_sample = b_t[t_idx]
+            return gts - baseline_per_sample
+        else:
+            raise ValueError("Baseline must be 'mean' or 'time'.")
 
     def update(self, state, action, reward, next_state, done) -> dict:
         """Store reward; if episode is done, compute policy gradient and update.
@@ -87,8 +116,6 @@ class REINFORCEAgent(BaseAgent):
         Returns:
             {"loss": float} when episode ends, {} otherwise
         """
-        # TODO: Implement REINFORCE update
-        #
         # self.rewards.append(reward)
         #
         # if not done:
@@ -120,24 +147,58 @@ class REINFORCEAgent(BaseAgent):
         # self.rewards.clear()
         #
         # return {"loss": loss.item()}
-        raise NotImplementedError("Implement update: Monte Carlo policy gradient")
+        self.states.append(state)
+        self.actions.append(action)
+        self.rewards.append(reward)
+        if not done:
+            return {}
+
+        gt = list()
+        g = 0
+        for r in reversed(self.rewards):
+            g = r + self.gamma * g
+            gt.insert(0, g)
+
+        self.replay_episodes.push(self.states, self.actions, self.rewards, gt)
+        self.states.clear()
+        self.actions.clear()
+        self.rewards.clear()
+
+        if len(self.replay_episodes) < self.batch_size:
+            return {"loss": 0}
+
+        batch_sample = self.replay_episodes.sample(self.batch_size)
+
+        states= batch_sample["states"].to(self.device)
+        actions = batch_sample["actions"].to(self.device)
+        gts= batch_sample["gts"].to(self.device)
+        lengths = batch_sample["lengths"]
+        # mask = batch_sample["mask"].to(self.device)
+
+        self.policy_net.train()
+        cater_logits = self.policy_net(states)
+        log_probs = cater_logits.log_prob(actions)
+        gts = self.compute_baseline(gts, lengths)
+        loss = -(log_probs * gts).sum()
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+        self.replay_episodes._buffer.clear()
+
+        return {'loss': loss.item()}
 
     def save(self, path: str) -> None:
         """Save policy network weights."""
-        # TODO: torch.save(self.policy.state_dict(), path)
-        raise NotImplementedError("Implement save")
+        torch.save(self.policy_net.state_dict(), path)
 
     def load(self, path: str) -> None:
         """Load policy network weights."""
-        # TODO: self.policy.load_state_dict(torch.load(path))
-        raise NotImplementedError("Implement load")
+        self.policy_net.load_state_dict(torch.load(path))
 
     def set_eval_mode(self) -> None:
         """Set policy to eval mode (still stochastic but no dropout/batchnorm)."""
-        # TODO: self.policy.eval()
-        raise NotImplementedError("Implement set_eval_mode")
+        self.policy_net.eval()
 
     def set_train_mode(self) -> None:
         """Set policy back to train mode."""
-        # TODO: self.policy.train()
-        raise NotImplementedError("Implement set_train_mode")
+        self.policy_net.train()
