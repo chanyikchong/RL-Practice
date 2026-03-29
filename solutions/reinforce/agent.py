@@ -96,7 +96,7 @@ class REINFORCEAgent(BaseAgent):
     # ---------------------------------------------------------------------- #
 
     def update(self, state: np.ndarray, action: int, reward: float,
-               next_state: np.ndarray, done: bool) -> dict:
+               next_state: np.ndarray, terminated: bool, truncated: bool, done: bool) -> dict:
         """Accumulate rewards; update the policy when the episode finishes.
 
         REINFORCE is a Monte Carlo method, so the gradient step only happens
@@ -119,7 +119,7 @@ class REINFORCEAgent(BaseAgent):
         self.rewards.append(reward)
 
         # If the episode hasn't ended yet, nothing to do
-        if not done:
+        if not done:  # done = terminated or truncated
             return {}
 
         # ---- Compute discounted returns for each timestep ----

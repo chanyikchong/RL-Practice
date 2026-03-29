@@ -154,7 +154,7 @@ class QLearningAgent(BaseAgent):
     # ---------------------------------------------------------------------- #
 
     def update(self, state: np.ndarray, action: int, reward: float,
-               next_state: np.ndarray, done: bool) -> dict:
+               next_state: np.ndarray, terminated: bool, truncated: bool, done: bool) -> dict:
         """Apply the one-step Q-learning (off-policy TD(0)) update.
 
         Bellman update:
@@ -173,7 +173,7 @@ class QLearningAgent(BaseAgent):
         current_q = self.q_table[s + (action,)]
 
         # TD target: immediate reward + discounted best future value
-        if done:
+        if terminated:
             td_target = reward
         else:
             td_target = reward + self.gamma * np.max(self.q_table[s_next])

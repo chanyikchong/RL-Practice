@@ -100,7 +100,7 @@ class A2CAgent(BaseAgent):
     # Learning update
     # --------------------------------------------------------------------- #
 
-    def update(self, state, action, reward, next_state, done) -> dict:
+    def update(self, state, action, reward, next_state, terminated, truncated, done) -> dict:
         """Store a transition and, every N steps (or at episode end), update.
 
         The update performs the following:
@@ -128,16 +128,15 @@ class A2CAgent(BaseAgent):
         self.states.append(state)
         self.actions.append(action)
         self.rewards.append(reward)
-        self.dones.append(done)
+        self.dones.append(terminated)  # mask future only at true termination, not truncation
 
         # Only update every n_steps, or when the episode ends
         if len(self.states) < self.n_steps and not done:
             return {}
 
         # ---- Bootstrap value for the state after the last stored step ----
-        # If the episode ended, the future value is 0; otherwise we estimate
-        # it with the critic.
-        if done:
+        # Truncated episodes still have future value; only zero out on true termination.
+        if terminated:
             next_value = torch.tensor(0.0)
         else:
             with torch.no_grad():

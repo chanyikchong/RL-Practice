@@ -115,7 +115,7 @@ class ActorCriticAgent(BaseAgent):
     # ---------------------------------------------------------------------- #
 
     def update(self, state: np.ndarray, action: int, reward: float,
-               next_state: np.ndarray, done: bool) -> dict:
+               next_state: np.ndarray, terminated: bool, truncated: bool, done: bool) -> dict:
         """One-step TD Actor-Critic update.
 
         Performed at *every* environment step (not just episode boundaries).
@@ -137,7 +137,7 @@ class ActorCriticAgent(BaseAgent):
 
         with torch.no_grad():
             # If the episode ended, there is no next-state value
-            if done:
+            if terminated:
                 next_value = torch.tensor(0.0)
             else:
                 next_value = self.critic(next_state_t).squeeze()  # V(s')

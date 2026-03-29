@@ -122,7 +122,7 @@ class DQNAgent(BaseAgent):
     # ---------------------------------------------------------------------- #
 
     def update(self, state: np.ndarray, action: int, reward: float,
-               next_state: np.ndarray, done: bool) -> dict:
+               next_state: np.ndarray, terminated: bool, truncated: bool, done: bool) -> dict:
         """Store transition, sample a mini-batch, and perform a gradient step.
 
         The update only runs once the replay buffer has accumulated enough
@@ -143,7 +143,9 @@ class DQNAgent(BaseAgent):
             Dict with ``loss``, ``epsilon``, and ``buffer_size``.
         """
         # Step 1: store transition
-        self.buffer.push(state, action, reward, next_state, done)
+        # Store terminated (not done) so the TD target is bootstrapped correctly
+        # for truncated episodes (time limit) rather than zeroing out future value.
+        self.buffer.push(state, action, reward, next_state, terminated)
 
         # Step 2: skip training until we have enough data
         if not self.buffer.is_ready:

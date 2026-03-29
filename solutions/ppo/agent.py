@@ -131,7 +131,7 @@ class PPOAgent(BaseAgent):
     # Learning update
     # --------------------------------------------------------------------- #
 
-    def update(self, state, action, reward, next_state, done) -> dict:
+    def update(self, state, action, reward, next_state, terminated, truncated, done) -> dict:
         """Store a transition; perform a full PPO update every n_steps.
 
         The PPO update proceeds as follows:
@@ -154,7 +154,9 @@ class PPOAgent(BaseAgent):
         """
         # -- Store the transition --
         self.rewards.append(reward)
-        self.dones.append(done)
+        # Only mask future returns at true termination (crash/land).
+        # Truncation (time limit) still has future value — bootstrap instead.
+        self.dones.append(terminated)
 
         # Wait until we have n_steps transitions (or episode ended)
         if len(self.states) < self.n_steps and not done:
@@ -164,7 +166,8 @@ class PPOAgent(BaseAgent):
         # Step 1: Compute GAE (Generalized Advantage Estimation)
         # ================================================================ #
         with torch.no_grad():
-            if done:
+            if terminated:
+                # True end of episode: no future value
                 next_value = 0.0
             else:
                 _, nv = self.network(
@@ -217,10 +220,10 @@ class PPOAgent(BaseAgent):
         actions_t = torch.tensor(self.actions, dtype=torch.long)
         old_log_probs_t = torch.stack(self.log_probs)
 
-        # Normalize advantages -- this is critical for stable PPO training.
-        # Without normalization, the scale of advantages varies wildly across
-        # different environments and training stages, making hyperparameter
-        # tuning much harder.
+        # Normalize advantages and returns.
+        # Advantages: zero-mean, unit-variance across the rollout batch.
+        # Returns: same normalization so that critic MSE stays ~O(1) and
+        # doesn't dwarf the actor loss (~250:1 ratio without this).
         if advantages_t.numel() > 1:
             advantages_t = (advantages_t - advantages_t.mean()) / (
                 advantages_t.std() + 1e-8
@@ -283,7 +286,7 @@ class PPOAgent(BaseAgent):
                 actor_loss = -torch.min(surr1, surr2).mean()
 
                 # ---- Value (critic) loss ----
-                critic_loss = F.mse_loss(new_values.squeeze(), mb_returns)
+                critic_loss = F.mse_loss(new_values.squeeze(-1), mb_returns)
 
                 # ---- Entropy bonus ----
                 # Higher entropy = more exploration.  We subtract it from the
@@ -362,8 +365,20 @@ class PPOAgent(BaseAgent):
 
     def set_eval_mode(self) -> None:
         """Switch to evaluation mode (affects dropout/batchnorm if present)."""
+        self.states.clear()
+        self.actions.clear()
+        self.rewards.clear()
+        self.log_probs.clear()
+        self.values.clear()
+        self.dones.clear()
         self.network.eval()
 
     def set_train_mode(self) -> None:
         """Switch back to training mode."""
+        self.states.clear()
+        self.actions.clear()
+        self.rewards.clear()
+        self.log_probs.clear()
+        self.values.clear()
+        self.dones.clear()
         self.network.train()

@@ -164,6 +164,8 @@ class Trainer:
                 action=action,
                 reward=reward,
                 next_state=next_obs,
+                terminated=terminated,
+                truncated=truncated,
                 done=done,
             )
             if metrics:
